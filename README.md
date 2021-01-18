@@ -97,17 +97,17 @@ Substrate 支持三种钥匙生成及签名法
 
 首先从 `pallets/ocw-demo/src` 谈起。
 
-触发 ocw，一個區塊生成 (稱作 block import) 有三個階段
+触发 ocw，一个区块生成 (称作 block import) 有三个阶段
 
-- 區塊初始化 (block initialization)
-- 跑鏈上邏輯
-- 區塊最終化 (block finalization)
+- 区块初始化 (block initialization)
+- 跑链上逻辑
+- 区块最终化 (block finalization)
 
 参考 [rustdoc](https://substrate.dev/rustdocs/v2.0.0/frame_system/enum.Phase.html)
 
 你们定义的 pallet 都有 [OnInitialize](https://substrate.dev/rustdocs/v2.0.0/frame_support/traits/trait.OnInitialize.html), 及 [OnFinalize]((https://substrate.dev/rustdocs/v2.0.0/frame_support/traits/trait.OnFinalize.html)) 函数可供设定回调
 
-完成一次區塊生成後，就會調用以下 ocw 入口。
+完成一次区块生成后，就会调用以下 ocw 入口。
 
 ```rust
 fn offchain_worker(block_number: T::BlockNumber) {
@@ -116,7 +116,7 @@ fn offchain_worker(block_number: T::BlockNumber) {
 }
 ```
 
-接下來我們可用三種交易方法把計算結果寫回鏈上：
+接下来我们可用三种交易方法把计算结果写回链上：
 
   1. 签名交易
   2. 不签名交易
@@ -157,8 +157,8 @@ fn offchain_worker(block_number: T::BlockNumber) {
     `runtimes/src/lib.rs`
 
     ```rust
-    impl ocw_demo::Trait for Runtime {
-      type AuthorityId = ocw_demo::crypto::TestAuthId;
+    impl pallet_ocw_demo::Trait for Runtime {
+      type AuthorityId = pallet_ocw_demo::crypto::TestAuthId;
       type Call = Call;
       type Event = Event;
     }
@@ -169,13 +169,10 @@ fn offchain_worker(block_number: T::BlockNumber) {
     {
       fn create_transaction<C: frame_system::offchain::AppCrypto<Self::Public, Self::Signature>>(
         call: Call,
-        public: <Signature as sp_runtime::traits::Verify>::Signer,
+        public: <Signature as traits::Verify>::Signer,
         account: AccountId,
         index: Index,
-      ) -> Option<(
-        Call,
-        <UncheckedExtrinsic as sp_runtime::traits::Extrinsic>::SignaturePayload,
-      )> {
+      ) -> Option<(Call, <UncheckedExtrinsic as traits::Extrinsic>::SignaturePayload)> {
         let period = BlockHashCount::get() as u64;
         let current_block = System::block_number()
           .saturated_into::<u64>()
@@ -191,36 +188,41 @@ fn offchain_worker(block_number: T::BlockNumber) {
           pallet_transaction_payment::ChargeTransactionPayment::<Runtime>::from(tip),
         );
 
-        #[cfg_attr(not(feature = "std"), allow(unused_variables))]
         let raw_payload = SignedPayload::new(call, extra)
           .map_err(|e| {
-            debug::native::warn!("SignedPayload error: {:?}", e);
+            debug::warn!("SignedPayload error: {:?}", e);
           })
           .ok()?;
-
         let signature = raw_payload.using_encoded(|payload| C::sign(payload, public))?;
-
         let address = account;
         let (call, extra, _) = raw_payload.deconstruct();
-        Some((call, (address, signature, extra)))
+        Some((call, (multiaddress::MultiAddress::Id(address), signature.into(), extra)))
       }
     }
 
-    // 还有这个 SignedExtra 是在下面定义的
+    impl frame_system::offchain::SigningTypes for Runtime {
+      type Public = <Signature as traits::Verify>::Signer;
+      type Signature = Signature;
+    }
 
-    /// The SignedExtension to the basic transaction logic.
-    pub type SignedExtra = (
-      frame_system::CheckSpecVersion<Runtime>,
-      frame_system::CheckTxVersion<Runtime>,
-      frame_system::CheckGenesis<Runtime>,
-      frame_system::CheckEra<Runtime>,
-      frame_system::CheckNonce<Runtime>,
-      frame_system::CheckWeight<Runtime>,
-      pallet_transaction_payment::ChargeTransactionPayment<Runtime>,
-    );
+    impl<C> frame_system::offchain::SendTransactionTypes<C> for Runtime
+    where
+      Call: From<C>,
+    {
+      type OverarchingCall = Call;
+      type Extrinsic = UncheckedExtrinsic;
+    }
     ```
 
-4. 接下来看 `fn offchain_signed_tx` 内的函数
+4. 在 `node/src/service.rs` 加 keystore 一段
+
+    ```rust
+    keystore.write().insert_ephemeral_from_seed_by_type::<runtime::pallet_ocw_demo::crypto::Pair>(
+      "//Alice", runtime::pallet_ocw_demo::KEY_TYPE
+    ).expect("Creating key with account Alice should succeed.");
+    ```
+
+5. 接下来看 `fn offchain_signed_tx` 内的函数
 
     ```rust
     fn offchain_signed_tx(block_number: T::BlockNumber) -> Result<(), Error<T>> {
@@ -231,7 +233,7 @@ fn offchain_worker(block_number: T::BlockNumber) {
       let signer = Signer::<T, T::AuthorityId>::any_account();
 
       // Translating the current block number to number and submit it on-chain
-      let number: u64 = block_number.try_into().unwrap_or(0) as u64;
+      let number: u32 = block_number.try_into().unwrap_or(0);
 
       // `result` is in the type of `Option<(Account<T>, Result<(), ()>)>`. It is:
       //   - `None`: no account is available for sending transaction
@@ -258,18 +260,260 @@ fn offchain_worker(block_number: T::BlockNumber) {
     }
     ```
 
-5. 然后就是当下一次区块生成的时候，你就看到 `submit_number_signed()` 被呼叫到。一个数字也加到去 `Number`
-这个 `Vec` 里。
+#### 不具签名交易
 
-#### 不签名交易
+1. 调用 `SubmitTransaction::<T, Call<T>>::submit_unsigned_transaction`
+
+    看 `pallets/ocw-demo/src/lib.rs`
+
+    ```rust
+    fn offchain_unsigned_tx(block_number: T::BlockNumber) -> Result<(), Error<T>> {
+      let number: u32 = block_number.try_into().unwrap_or(0);
+      let call = Call::submit_number_unsigned(number);
+
+      // `submit_unsigned_transaction` returns a type of `Result<(), ()>`
+      //   ref: https://substrate.dev/rustdocs/v2.0.0/frame_system/offchain/struct.SubmitTransaction.html#method.submit_unsigned_transaction
+      SubmitTransaction::<T, Call<T>>::submit_unsigned_transaction(call.into())
+        .map_err(|_| {
+          debug::error!("Failed in offchain_unsigned_tx");
+          <Error<T>>::OffchainUnsignedTxError
+        })
+    }
+    ```
+
+2. 默认不具签名的交易是会被拒绝的。所以需要一个函数定明我们的自定义核对逻辑并批准这函数通过。
+
+    看 `pallets/ocw-demo/src/lib.rs`
+
+    ```rust
+    impl<T: Trait> frame_support::unsigned::ValidateUnsigned for Module<T> {
+      type Call = Call<T>;
+
+      fn validate_unsigned(_source: TransactionSource, call: &Self::Call) -> TransactionValidity {
+        let valid_tx = |provide| ValidTransaction::with_tag_prefix("ocw-demo")
+          .priority(UNSIGNED_TXS_PRIORITY)
+          .and_provides([&provide])
+          .longevity(3)
+          .propagate(true)
+          .build();
+
+        match call {
+          Call::submit_number_unsigned(_number) => valid_tx(b"submit_number_unsigned".to_vec()),
+          Call::submit_number_unsigned_with_signed_payload(ref payload, ref signature) => {
+            if !SignedPayload::<T>::verify::<T::AuthorityId>(payload, signature.clone()) {
+              return InvalidTransaction::BadProof.into();
+            }
+            valid_tx(b"submit_number_unsigned_with_signed_payload".to_vec())
+          },
+          _ => InvalidTransaction::Call.into(),
+        }
+      }
+    }
+    ```
 
 #### 不签名但具签名信息的交易
 
+看 `offchain_unsigned_tx_signed_payload`
+
+```rust
+#[derive(Encode, Decode, Clone, PartialEq, Eq, RuntimeDebug)]
+pub struct Payload<Public> {
+  number: u32,
+  public: Public
+}
+
+// ...
+
+fn offchain_unsigned_tx_signed_payload(block_number: T::BlockNumber) -> Result<(), Error<T>> {
+  // Retrieve the signer to sign the payload
+  let signer = Signer::<T, T::AuthorityId>::any_account();
+
+  let number: u32 = block_number.try_into().unwrap_or(0);
+
+  // `send_unsigned_transaction` is returning a type of `Option<(Account<T>, Result<(), ()>)>`.
+  //   Similar to `send_signed_transaction`, they account for:
+  //   - `None`: no account is available for sending transaction
+  //   - `Some((account, Ok(())))`: transaction is successfully sent
+  //   - `Some((account, Err(())))`: error occured when sending the transaction
+  if let Some((_, res)) = signer.send_unsigned_transaction(
+    |acct| Payload { number, public: acct.public.clone() },
+    Call::submit_number_unsigned_with_signed_payload
+  ) {
+    return res.map_err(|_| {
+      debug::error!("Failed in offchain_unsigned_tx_signed_payload");
+      <Error<T>>::OffchainUnsignedTxSignedPayloadError
+    });
+  }
+
+  // The case of `None`: no account is available for sending
+  debug::error!("No local account available");
+  Err(<Error<T>>::NoLocalAcctForSigning)
+}
+```
+
+主要我们定义了 `Payload` 这个结构体。
+
+为什么会有 **不签名但具签名信息的交易**? 因为很多时候签名交易意味签名者需要为该交易付手续费。但有些情况你想知道该交易来源是谁，但不需要该用户付手续费。
+
 #### 发 HTTP 请求
+
+接下来我们从 github 那里获取 Gavin Wood 的 github 个人资料。这要用上 http request 和 解析 JSON 的能力。
+
+```rust
+pub const HTTP_REMOTE_REQUEST: &str = "https://api.github.com/orgs/substrate-developer-hub";
+pub const HTTP_HEADER_USER_AGENT: &str = "gavofyork";
+
+#[derive(Deserialize, Encode, Decode, Default)]
+struct GithubInfo {
+  // Specify our own deserializing function to convert JSON string to vector of bytes
+  #[serde(deserialize_with = "de_string_to_bytes")]
+  login: Vec<u8>,
+  #[serde(deserialize_with = "de_string_to_bytes")]
+  blog: Vec<u8>,
+  public_repos: u32,
+}
+
+pub fn de_string_to_bytes<'de, D>(de: D) -> Result<Vec<u8>, D::Error>
+where
+  D: Deserializer<'de>,
+{
+  let s: &str = Deserialize::deserialize(de)?;
+  Ok(s.as_bytes().to_vec())
+}
+
+fn fetch_n_parse() -> Result<GithubInfo, Error<T>> {
+  let resp_bytes = Self::fetch_from_remote().map_err(|e| {
+    debug::error!("fetch_from_remote error: {:?}", e);
+    <Error<T>>::HttpFetchingError
+  })?;
+
+  let resp_str = str::from_utf8(&resp_bytes).map_err(|_| <Error<T>>::HttpFetchingError)?;
+  // Print out our fetched JSON string
+  debug::info!("{}", resp_str);
+
+  // Deserializing JSON to struct, thanks to `serde` and `serde_derive`
+  let gh_info: GithubInfo =
+    serde_json::from_str(&resp_str).map_err(|_| <Error<T>>::HttpFetchingError)?;
+  Ok(gh_info)
+}
+
+fn fetch_from_remote() -> Result<Vec<u8>, Error<T>> {
+  debug::info!("sending request to: {}", HTTP_REMOTE_REQUEST);
+
+  // Initiate an external HTTP GET request. This is using high-level wrappers from `sp_runtime`.
+  let request = rt_offchain::http::Request::get(HTTP_REMOTE_REQUEST);
+
+  // Keeping the offchain worker execution time reasonable, so limiting the call to be within 3s.
+  let timeout = sp_io::offchain::timestamp()
+    .add(rt_offchain::Duration::from_millis(FETCH_TIMEOUT_PERIOD));
+
+  // For github API request, we also need to specify `user-agent` in http request header.
+  //   See: https://developer.github.com/v3/#user-agent-required
+  let pending = request
+    .add_header("User-Agent", HTTP_HEADER_USER_AGENT)
+    .deadline(timeout) // Setting the timeout time
+    .send() // Sending the request out by the host
+    .map_err(|_| <Error<T>>::HttpFetchingError)?;
+
+  // By default, the http request is async from the runtime perspective. So we are asking the
+  //   runtime to wait here.
+  // The returning value here is a `Result` of `Result`, so we are unwrapping it twice by two `?`
+  //   ref: https://substrate.dev/rustdocs/v2.0.0/sp_runtime/offchain/http/struct.PendingRequest.html#method.try_wait
+  let response = pending
+    .try_wait(timeout)
+    .map_err(|_| <Error<T>>::HttpFetchingError)?
+    .map_err(|_| <Error<T>>::HttpFetchingError)?;
+
+  if response.code != 200 {
+    debug::error!("Unexpected http request status code: {}", response.code);
+    return Err(<Error<T>>::HttpFetchingError);
+  }
+
+  // Next we fully read the response body and collect it to a vector of bytes.
+  Ok(response.body().collect::<Vec<u8>>())
+}
+```
 
 #### 解析 JSON
 
+- 其实解析 JSON 也不太难，用 `serde` 库就是了
+- 不过 cargo 有一个问题，我们 runtime 里有 serde, 并且会编译支持 `std`, 所以现在如果在 `ocw-demo` pallet 用同一个 serde 就会自动支持 `std` （详细解释在这 [github issue](https://github.com/rust-lang/cargo/issues/4463)）。
+- 所以同一个套代码，在 cargo crate 上命名为 `alt_serde`
+
+```rust
+// ref: https://serde.rs/container-attrs.html#crate
+#[derive(Deserialize, Encode, Decode, Default)]
+struct GithubInfo {
+  // Specify our own deserializing function to convert JSON string to vector of bytes
+  #[serde(deserialize_with = "de_string_to_bytes")]
+  login: Vec<u8>,
+  #[serde(deserialize_with = "de_string_to_bytes")]
+  blog: Vec<u8>,
+  public_repos: u32,
+}
+
+pub fn de_string_to_bytes<'de, D>(de: D) -> Result<Vec<u8>, D::Error>
+where
+  D: Deserializer<'de>,
+{
+  let s: &str = Deserialize::deserialize(de)?;
+  Ok(s.as_bytes().to_vec())
+}
+```
+
 #### ocw 自己链下的独立存储
+
+```rust
+fn fetch_github_info() -> Result<(), Error<T>> {
+  // Create a reference to Local Storage value.
+  // Since the local storage is common for all offchain workers, it's a good practice
+  // to prepend our entry with the pallet name.
+  let s_info = StorageValueRef::persistent(b"offchain-demo::gh-info");
+
+  // Local storage is persisted and shared between runs of the offchain workers,
+  // offchain workers may run concurrently. We can use the `mutate` function to
+  // write a storage entry in an atomic fashion.
+  //
+  // With a similar API as `StorageValue` with the variables `get`, `set`, `mutate`.
+  // We will likely want to use `mutate` to access
+  // the storage comprehensively.
+  //
+  // Ref: https://substrate.dev/rustdocs/v2.0.0/sp_runtime/offchain/storage/struct.StorageValueRef.html
+  if let Some(Some(gh_info)) = s_info.get::<GithubInfo>() {
+    // gh-info has already been fetched. Return early.
+    debug::info!("cached gh-info: {:?}", gh_info);
+    return Ok(());
+  }
+
+  // Since off-chain storage can be accessed by off-chain workers from multiple runs, it is important to lock
+  //   it before doing heavy computations or write operations.
+  // ref: https://substrate.dev/rustdocs/v2.0.0-rc3/sp_runtime/offchain/storage_lock/index.html
+  //
+  // There are four ways of defining a lock:
+  //   1) `new` - lock with default time and block exipration
+  //   2) `with_deadline` - lock with default block but custom time expiration
+  //   3) `with_block_deadline` - lock with default time but custom block expiration
+  //   4) `with_block_and_time_deadline` - lock with custom time and block expiration
+  // Here we choose the most custom one for demonstration purpose.
+  let mut lock = StorageLock::<BlockAndTime<Self>>::with_block_and_time_deadline(
+    b"offchain-demo::lock", LOCK_BLOCK_EXPIRATION,
+    rt_offchain::Duration::from_millis(LOCK_TIMEOUT_EXPIRATION)
+  );
+
+  // We try to acquire the lock here. If failed, we know the `fetch_n_parse` part inside is being
+  //   executed by previous run of ocw, so the function just returns.
+  // ref: https://substrate.dev/rustdocs/v2.0.0/sp_runtime/offchain/storage_lock/struct.StorageLock.html#method.try_lock
+  if let Ok(_guard) = lock.try_lock() {
+    match Self::fetch_n_parse() {
+      Ok(gh_info) => { s_info.set(&gh_info); }
+      Err(err) => { return Err(err); }
+    }
+  }
+  Ok(())
+}
+```
+
+参考 [`StorageValueRef` rustdocs](https://substrate.dev/rustdocs/v2.0.0/sp_runtime/offchain/storage/struct.StorageValueRef.html)
 
 ## Pallet 讲解: `pallet-im-online`
 
@@ -277,7 +521,4 @@ fn offchain_worker(block_number: T::BlockNumber) {
 
 ## 作业
 
-这是一个有趣的作业，我们一起尝试用 off-chain worker 取得 DOT (或你所选的加密币) 的价格，然后用不签名但具签名信息的交易把得到的 DOT 价格资讯传回到链上。
-
-- git clone [这个代码](TODO) 库作为基础。尝试编译，确定可编译通过。
-- 过一编代码结构，要做的地方
+不日预告 😉
