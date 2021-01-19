@@ -378,11 +378,11 @@ fn offchain_unsigned_tx_signed_payload(block_number: T::BlockNumber) -> Result<(
 
 #### 发 HTTP 请求
 
-接下来我们从 github 那里获取 Gavin Wood 的 github 个人资料。这要用上 http request 和 解析 JSON 的能力。
+接下来我们从 github 那里获取 Substrate 开发者中心的数据。这要用上 http request 和 解析 JSON 的能力。
 
 ```rust
 pub const HTTP_REMOTE_REQUEST: &str = "https://api.github.com/orgs/substrate-developer-hub";
-pub const HTTP_HEADER_USER_AGENT: &str = "gavofyork";
+pub const HTTP_HEADER_USER_AGENT: &str = "jimmychu0807";
 
 #[derive(Deserialize, Encode, Decode, Default)]
 struct GithubInfo {
@@ -538,7 +538,7 @@ fn fetch_github_info() -> Result<(), Error<T>> {
 
 ## Pallet 讲解: `pallet-im-online`
 
-- 首先，打开 [rustdoc 文档](`https://substrate.dev/rustdocs/v2.0.0/pallet_im_online/index.html`)
+- 首先，打开 [rustdoc 文档](https://substrate.dev/rustdocs/v2.0.0/pallet_im_online/index.html)
 
 - 它是作为一个 validator 发一次心跳 (heartbeat) 出去给其他 validators。证明自己在该 era 里自己是在线的。如果一个 validator 在一个 era 里一次心跳都没有，则会被视作不在线，而自己的质押也会有惩罚。
 
