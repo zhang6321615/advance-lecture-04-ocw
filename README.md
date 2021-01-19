@@ -93,9 +93,9 @@ Substrate 支持三种钥匙生成及签名法
 
 ### 使用 ocw
 
-以下开始进入编程环节，讲代码。大家可 git clone [ocw-demo](https://github.com/SubstrateCourse/ocw-demo). 跟着一起跑。我也是讲里面的内容。成功编译后跑起来会是这样的：
+以下开始进入编程环节，讲代码。大家可 git clone [advance-lecture-04-ocw](https://github.com/SubstrateCourse/advance-lecture-04-ocw). 跟着一起跑。我也是讲里面的内容。成功编译后跑起来会是这样的:
 
-<iframe frameBorder='0' width='640' height='600' webkitallowfullscreen mozallowfullscreen allowfullscreen src="https://www.awesomescreenshot.com/embed?id=2423609&shareKey=a190e0063aab700d8354e78f2d5db9a9"></iframe>
+https://www.awesomescreenshot.com/video/2423609?key=a190e0063aab700d8354e78f2d5db9a9
 
 首先从 `pallets/ocw-demo/src` 谈起。
 
