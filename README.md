@@ -1,5 +1,24 @@
 # Substrate 进阶课第四讲 - 链下工作机 (Off-chain Worker)
 
+<!-- MarkdownTOC autolink="true" -->
+
+- [Substrate 密码学](#substrate-%E5%AF%86%E7%A0%81%E5%AD%A6)
+  - [哈希键生成方法](#%E5%93%88%E5%B8%8C%E9%94%AE%E7%94%9F%E6%88%90%E6%96%B9%E6%B3%95)
+  - [钥匙对生成及签名法](#%E9%92%A5%E5%8C%99%E5%AF%B9%E7%94%9F%E6%88%90%E5%8F%8A%E7%AD%BE%E5%90%8D%E6%B3%95)
+- [链下工作机 off-chain worker \(ocw\)](#%E9%93%BE%E4%B8%8B%E5%B7%A5%E4%BD%9C%E6%9C%BA-off-chain-worker-ocw)
+  - [什么是 ocw?](#%E4%BB%80%E4%B9%88%E6%98%AF-ocw)
+  - [使用 ocw](#%E4%BD%BF%E7%94%A8-ocw)
+    - [签名交易](#%E7%AD%BE%E5%90%8D%E4%BA%A4%E6%98%93)
+    - [不具签名交易](#%E4%B8%8D%E5%85%B7%E7%AD%BE%E5%90%8D%E4%BA%A4%E6%98%93)
+    - [不签名但具签名信息的交易](#%E4%B8%8D%E7%AD%BE%E5%90%8D%E4%BD%86%E5%85%B7%E7%AD%BE%E5%90%8D%E4%BF%A1%E6%81%AF%E7%9A%84%E4%BA%A4%E6%98%93)
+    - [发 HTTP 请求](#%E5%8F%91-http-%E8%AF%B7%E6%B1%82)
+    - [解析 JSON](#%E8%A7%A3%E6%9E%90-json)
+    - [ocw 自己链下的独立存储](#ocw-%E8%87%AA%E5%B7%B1%E9%93%BE%E4%B8%8B%E7%9A%84%E7%8B%AC%E7%AB%8B%E5%AD%98%E5%82%A8)
+- [Pallet 讲解: `pallet-im-online`](#pallet-%E8%AE%B2%E8%A7%A3-pallet-im-online)
+- [作业](#%E4%BD%9C%E4%B8%9A)
+
+<!-- /MarkdownTOC -->
+
 ## Substrate 密码学
 
 - 还是先过一下理论作铺垫
