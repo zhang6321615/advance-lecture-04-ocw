@@ -93,7 +93,9 @@ Substrate 支持三种钥匙生成及签名法
 
 ### 使用 ocw
 
-以下开始进入编程环节，讲代码。大家可 git clone [ocw-demo](https://github.com/SubstrateCourse/ocw-demo). 跟着一起跑。我也是讲里面的内容。
+以下开始进入编程环节，讲代码。大家可 git clone [ocw-demo](https://github.com/SubstrateCourse/ocw-demo). 跟着一起跑。我也是讲里面的内容。成功编译后跑起来会是这样的：
+
+<iframe frameBorder='0' width='640' height='600' webkitallowfullscreen mozallowfullscreen allowfullscreen src="https://www.awesomescreenshot.com/embed?id=2423609&shareKey=a190e0063aab700d8354e78f2d5db9a9"></iframe>
 
 首先从 `pallets/ocw-demo/src` 谈起。
 
@@ -519,6 +521,30 @@ fn fetch_github_info() -> Result<(), Error<T>> {
 
 - 首先，打开 [rustdoc 文档](`https://substrate.dev/rustdocs/v2.0.0/pallet_im_online/index.html`)
 
+- 它是作为一个 validator 发一次心跳 (heartbeat) 出去给其他 validators。证明自己在该 era 里自己是在线的。如果一个 validator 在一个 era 里一次心跳都没有，则会被视作不在线，而自己的质押也会有惩罚。
+
+- 他的心跳是用 offchain worker 的 **不签名但具签名信息的交易** 来完成的。
+
+代码：
+
+  1. L#107 - 140: 载入这个 pallet 的签名
+  2. L#153 - 228: 定义不同的结构体，和 enum 错误
+  3. L#230 - 260: 该 pallet 的 `Trait` (最新 Substrate 改了名称叫 Config, 因为我们全称这个东西为 pallet configurable trait). Runtime 在实现这个 pallet 时需要实现这个 trait。
+  4. L#277 - 306: pallet 的存储
+  5. L#308 - 316: pallet 回传山来外部的错误信息
+  6. 主要逻辑： offchain_worker 入口
+
+    - L#372 - L#394: `fn offchain_worker`
+    - L#455 - L#476: `Self::send_heartbeats`
+    - L#479 - L#530: `Self::send_heartbeat`, 留意用了 `submit_unsigned_transaction`. 回调 `Call::heartbeat`
+
+  7. L#339 - 369: 回看 `Call::heartbeat` 是做什么
+  8. 也看 runtime 怎样实现 pallet_im_online, `substrate/runtime/src/lib.rs` 的 L#809 - 816
+
 ## 作业
 
-不日预告 😉
+以 `lecture-demo` 作基础，把它拷到 `assignment` 目录里来修改，最后提交这个代码库。
+
+利用 offchain worker 取出 DOT 当前对 USD 的价格，并把写到一个 Vec 的存储里，你们自己选一种方法提交回链上，并在代码注释为什么用这种方法提交回链上最好。只保留当前最近的 10 个价格，其他价格可丢弃 （就是 Vec 的长度长到 10 后，这时再插入一个值时，要先丢弃最早的那个值）。
+
+这个 http 请求可得到当前 DOT 价格：[https://api.coincap.io/v2/assets/polkadot](https://api.coincap.io/v2/assets/polkadot)。
