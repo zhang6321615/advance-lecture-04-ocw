@@ -542,7 +542,7 @@ fn fetch_github_info() -> Result<(), Error<T>> {
 
 - 它是作为一个 validator 发一次心跳 (heartbeat) 出去给其他 validators。证明自己在该 era 里自己是在线的。如果一个 validator 在一个 era 里一次心跳都没有，则会被视作不在线，而自己的质押也会有惩罚。
 
-- 他的心跳是用 offchain worker 的 **不签名但具签名信息的交易** 来完成的。
+- 他的心跳是用 offchain worker 的 **不签名但具签名信息的交易** (unsigned transaction with signed payload) 来完成的。
 
 代码：
 
