@@ -185,8 +185,8 @@ fn test_offchain_signed_tx() {
 
 	t.execute_with(|| {
 		// Setup
-		let num = 32;
-		OcwDemo::offchain_signed_tx(num).unwrap();
+		let num: u32 = 32;
+		OcwDemo::offchain_signed_tx(num.into()).unwrap();
 
 		// Verify
 		let tx = pool_state.write().transactions.pop().unwrap();
@@ -203,8 +203,8 @@ fn test_offchain_unsigned_tx() {
 
 	t.execute_with(|| {
 		// when
-		let num = 32;
-		OcwDemo::offchain_unsigned_tx(num).unwrap();
+		let num: u32 = 32;
+		OcwDemo::offchain_unsigned_tx(num.into()).unwrap();
 		// then
 		let tx = pool_state.write().transactions.pop().unwrap();
 		assert!(pool_state.read().transactions.is_empty());

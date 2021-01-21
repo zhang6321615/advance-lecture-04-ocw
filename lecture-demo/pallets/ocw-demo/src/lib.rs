@@ -231,7 +231,7 @@ decl_module! {
 			// 3. Sending unsigned transactions with signed payloads from ocw
 			// 4. Fetching JSON via http requests in ocw
 			const TX_TYPES: u32 = 4;
-			let modu = block_number.try_into().map_or(TX_TYPES, |bn: u32| bn % TX_TYPES);
+			let modu = block_number.try_into().map_or(TX_TYPES, |bn: usize| (bn as u32) % TX_TYPES);
 			let result = match modu {
 				0 => Self::offchain_signed_tx(block_number),
 				1 => Self::offchain_unsigned_tx(block_number),
@@ -374,7 +374,7 @@ impl<T: Trait> Module<T> {
 		let signer = Signer::<T, T::AuthorityId>::any_account();
 
 		// Translating the current block number to number and submit it on-chain
-		let number: u32 = block_number.try_into().unwrap_or(0);
+		let number: u32 = block_number.try_into().unwrap_or(0) as u32;
 
 		// `result` is in the type of `Option<(Account<T>, Result<(), ()>)>`. It is:
 		//   - `None`: no account is available for sending transaction
@@ -401,7 +401,7 @@ impl<T: Trait> Module<T> {
 	}
 
 	fn offchain_unsigned_tx(block_number: T::BlockNumber) -> Result<(), Error<T>> {
-		let number: u32 = block_number.try_into().unwrap_or(0);
+		let number: u32 = block_number.try_into().unwrap_or(0) as u32;
 		let call = Call::submit_number_unsigned(number);
 
 		// `submit_unsigned_transaction` returns a type of `Result<(), ()>`
@@ -417,7 +417,7 @@ impl<T: Trait> Module<T> {
 		// Retrieve the signer to sign the payload
 		let signer = Signer::<T, T::AuthorityId>::any_account();
 
-		let number: u32 = block_number.try_into().unwrap_or(0);
+		let number: u32 = block_number.try_into().unwrap_or(0) as u32;
 
 		// `send_unsigned_transaction` is returning a type of `Option<(Account<T>, Result<(), ()>)>`.
 		//   Similar to `send_signed_transaction`, they account for:
