@@ -1,3 +1,12 @@
+> 注 #1：
+> 
+> `main` 分支要用 rust stable, `rustc 1.49.0 (e1884a8e3 2020-12-29)` 来编译。  
+> 而 `rust-nightly-2020-10-05` 分支则要用 rust nightly, `rustc 1.49.0-nightly (beb5ae474 2020-10-04)` 来编译。  
+> 请学员们根据自身编译环境选择。
+> 谢谢 @腾龙-开发-北京 的改良建议
+
+---
+
 # Substrate 进阶课第四讲 - 链下工作机 (Off-chain Worker)
 
 <!-- MarkdownTOC autolink="true" -->
