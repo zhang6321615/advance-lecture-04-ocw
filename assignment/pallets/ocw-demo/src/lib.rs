@@ -57,7 +57,7 @@ pub const FETCH_TIMEOUT_PERIOD: u64 = 3000;
 // in milli-seconds
 pub const LOCK_TIMEOUT_EXPIRATION: u64 = FETCH_TIMEOUT_PERIOD + 1000;
 // in milli-seconds
-//如果超过2/3的validator已经发送了报价，那么再经过3个区块高度，开始计算当前轮次的平均价格
+// 如果超过2/3的validator已经发送了报价，那么再经过3个区块高度，开始计算当前轮次的平均价格
 pub const LOCK_BLOCK_EXPIRATION: u32 = 3; // in block number
 
 /// Based on the above `KeyTypeId` we need to generate a pallet-specific crypto type wrapper.
@@ -108,7 +108,7 @@ impl<T: SigningTypes> SignedPayload<T> for Payload<T::Public> {
 pub type Price = u64;
 
 #[derive(Deserialize, Encode, Decode, Default)]
-struct DOTUSDJson {
+struct AssertToken {
 	data: DataDetail,
 	timestamp: u64,
 }
@@ -132,7 +132,7 @@ pub fn de_string_to_bytes<'de, D>(de: D) -> Result<Vec<u8>, D::Error>
 	Ok(s.as_bytes().to_vec())
 }
 
-impl fmt::Debug for DOTUSDJson {
+impl fmt::Debug for AssertToken {
 	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
 		write!(
 			f,
@@ -163,13 +163,13 @@ pub trait Trait: system::Trait + CreateSignedTransaction<Call<Self>> {
 	type Call: From<Call<Self>>;
 	/// The overarching event type.
 	type Event: From<Event<Self>> + Into<<Self as system::Trait>::Event>;
-	///用来表示小数位精度，每一个f64将乘以这个常量后转化为u64，剩下的小数位将舍弃
+	/// 用来表示小数位精度，每一个f64将乘以这个常量后转化为u64，剩下的小数位将舍弃
 	type PricePrecision: Get<u8>;
 }
 
 decl_storage! {
 	trait Store for Module<T: Trait> as Example {
-		///储存价格的双向链表，只保留NUM_VEC_LEN位
+		/// 储存价格的双向链表，只保留NUM_VEC_LEN位
 		Prices get(fn get_price): VecDeque<Price>;
 	}
 }
@@ -180,7 +180,7 @@ decl_event!(
 	where
 		AccountId = <T as system::Trait>::AccountId,
 	{
-		///节点Id，提交价格
+		/// 节点Id，提交价格
 		ReceivedPrice(Option<AccountId>, Price),
 	}
 );
@@ -200,13 +200,12 @@ decl_error! {
 		// Error returned when making unsigned transactions with signed payloads in off-chain worker
 		OffchainUnsignedTxSignedPayloadError,
 
-		// Error returned when fetching github info
+		// 网络请求错误
 		HttpFetchingError,
 
+		//
 		AcquireStorageLockError,
-
 		ConvertToStringError,
-
 		ParsingToF64Error,
 	}
 }
@@ -258,12 +257,12 @@ impl<T: Trait> Module<T> {
 				let _ = prices.pop_front();
 			}
 			prices.push_back(price);
-			debug::info!("Number vector: {:?}", prices);
+			debug::info!("price vector: {:?}", prices);
 		});
 	}
 
 	// 获取dot的价格
-	fn fetch_dot_usd_price() -> Result<DOTUSDJson, Error<T>> {
+	fn fetch_dot_usd_price() -> Result<AssertToken, Error<T>> {
 		// 加锁
 		let lock_key = b"offchain-demo::lock";
 		let mut lock = StorageLock::<BlockAndTime<Self>>::with_block_and_time_deadline(
@@ -280,15 +279,15 @@ impl<T: Trait> Module<T> {
 				}
 			}
 		}
-		Err(<Error<T>>::AcquireStorageLockError.into())
+		Err(Error::<T>::AcquireStorageLockError.into())
 	}
 
 	// 获取数据并解析
-	fn fetch_n_parse() -> Result<DOTUSDJson, Error<T>> {
+	fn fetch_n_parse() -> Result<AssertToken, Error<T>> {
 		// 请求数据源
 		let resp_bytes = Self::fetch_from_remote().map_err(|e| {
 			debug::error!("fetch_from_remote error: {:?}", e);
-			<Error<T>>::HttpFetchingError
+			Error::<T>::HttpFetchingError
 		})?;
 
 		// 字节数组转字符串
@@ -298,9 +297,8 @@ impl<T: Trait> Module<T> {
 		debug::info!("{}", resp_str);
 
 		// 字符串反序列化为结构体
-		let data_info: DOTUSDJson = serde_json::from_str(&resp_str).map_err(|_| <Error<T>>::HttpFetchingError)?;
+		let data_info: AssertToken = serde_json::from_str(&resp_str).map_err(|_| <Error<T>>::HttpFetchingError)?;
 
-		//
 		debug::info!("{:?}", str::from_utf8(&data_info.data.priceUsd));
 
 		Ok(data_info)
@@ -316,32 +314,32 @@ impl<T: Trait> Module<T> {
 		let timeout = sp_io::offchain::timestamp()
 			.add(rt_offchain::Duration::from_millis(FETCH_TIMEOUT_PERIOD));
 
-		//
 		let pending = request
 			.deadline(timeout) // 设置超时时间
 			.send() // 发送请求
-			.map_err(|_| <Error<T>>::HttpFetchingError)?;
+			.map_err(|_| Error::<T>::HttpFetchingError)?;
 
 		// 等待请求返回
 		let response = pending
 			.try_wait(timeout)
-			.map_err(|_| <Error<T>>::HttpFetchingError)?
-			.map_err(|_| <Error<T>>::HttpFetchingError)?;
+			.map_err(|_| Error::<T>::HttpFetchingError)?
+			.map_err(|_| Error::<T>::HttpFetchingError)?;
 
 		// 判断状态码
 		if response.code != 200 {
 			debug::error!("Unexpected http request status code: {}", response.code);
-			return Err(<Error<T>>::HttpFetchingError);
+			return Err(Error::<T>::HttpFetchingError);
 		}
 
 		Ok(response.body().collect::<Vec<u8>>())
 	}
 
-	fn offchain_price_unsigned_with_signed_payload(json: DOTUSDJson) -> Result<(), Error<T>> {
+	fn offchain_price_unsigned_with_signed_payload(json: AssertToken) -> Result<(), Error<T>> {
 		let signer = Signer::<T, T::AuthorityId>::any_account();
 
-		let val_u8 = json.data.priceUsd;
-		let val_f64: f64 = core::str::from_utf8(&val_u8)
+		// 将价格转为f64类型
+		let price_u8 = json.data.priceUsd;
+		let price_f64: f64 = core::str::from_utf8(&price_u8)
 			.map_err(|_| {
 				Error::<T>::ConvertToStringError
 			})?
@@ -350,22 +348,23 @@ impl<T: Trait> Module<T> {
 				Error::<T>::ParsingToF64Error
 			})?;
 
-		// 转换价格
-		let price = (val_f64 * 10f64.powi(T::PricePrecision::get() as i32)).round() as Price;
+		// 转换价格u64
+		let price = (price_f64 * 10f64.powi(T::PricePrecision::get() as i32)).round() as Price;
 
+		// 调用无签名交易,将数据存入存储
 		if let Some((_, res)) = signer.send_unsigned_transaction(
 			|acct| Payload { price, public: acct.public.clone() },
 			Call::submit_price_unsigned_with_signed_payload) {
 			return res.map_err(|_| {
 				debug::error!("Failed in offchain_unsigned_tx_signed_payload");
-				<Error<T>>::OffchainUnsignedTxSignedPayloadError
+				Error::<T>::OffchainUnsignedTxSignedPayloadError
 			});
 		}
 
-		// The case of `None`: no account is available for sending
+		// The case of `None`: 无账户可用
 		debug::error!("No local account available");
 
-		Err(<Error<T>>::NoLocalAcctForSigning)
+		Err(Error::<T>::NoLocalAcctForSigning)
 	}
 }
 
